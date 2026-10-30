@@ -1,0 +1,6 @@
+C:\Users\bbzhu\WorkBuddy\2026-10-28-20-29-24\LongerPlatformMod\bin\Release\LongerStationTrackMod.dll
+C:\Users\bbzhu\WorkBuddy\2026-10-28-20-29-24\LongerPlatformMod\bin\Release\LongerStationTrackMod.pdb
+C:\Users\bbzhu\WorkBuddy\2026-10-28-20-29-24\LongerPlatformMod\obj\x64\Release\LongerStationTrackMod.csproj.AssemblyReference.cache
+C:\Users\bbzhu\WorkBuddy\2026-10-28-20-29-24\LongerPlatformMod\obj\x64\Release\LongerStationTrackMod.csproj.CoreCompileInputs.cache
+C:\Users\bbzhu\WorkBuddy\2026-10-28-20-29-24\LongerPlatformMod\obj\x64\Release\LongerStationTrackMod.dll
+C:\Users\bbzhu\WorkBuddy\2026-10-28-20-29-24\LongerPlatformMod\obj\x64\Release\LongerStationTrackMod.pdb
