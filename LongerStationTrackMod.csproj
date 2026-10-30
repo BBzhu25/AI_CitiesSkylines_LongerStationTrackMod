@@ -2,7 +2,7 @@
 <Project ToolsVersion="15.0" DefaultTargets="Build" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
   <Import Project="$(MSBuildExtensionsPath)\$(MSBuildToolsVersion)\Microsoft.Common.props" Condition="Exists('$(MSBuildExtensionsPath)\$(MSBuildToolsVersion)\Microsoft.Common.props')" />
 
-  <!-- ===== 通用属性 ===== -->
+  <!-- ===== Common properties ===== -->
   <PropertyGroup>
     <Configuration Condition=" '$(Configuration)' == '' ">Debug</Configuration>
     <Platform Condition=" '$(Platform)' == '' ">x64</Platform>
@@ -17,7 +17,7 @@
     <TargetFrameworkProfile />
   </PropertyGroup>
 
-  <!-- ===== 本机路径（CS1 装在别处就只改 GamePath 这一行）===== -->
+  <!-- ===== Local paths (if CS1 is installed elsewhere, only change the GamePath line)===== -->
   <PropertyGroup>
     <GamePath Condition="'$(GamePath)' == ''">D:\SteamLibrary\steamapps\common\Cities_Skylines</GamePath>
     <ManagedPath>$(GamePath)\Cities_Data\Managed</ManagedPath>
@@ -47,7 +47,7 @@
     <PlatformTarget>x64</PlatformTarget>
   </PropertyGroup>
 
-  <!-- ===== 程序集引用：游戏 DLL 不复制(Private=false)，0Harmony 随 mod 发布(Private=true) ===== -->
+  <!-- ===== Assembly references: game DLLs are not copied ===== -->
   <ItemGroup>
     <Reference Include="ICities">
       <HintPath>$(ManagedPath)\ICities.dll</HintPath>
@@ -65,26 +65,24 @@
       <HintPath>$(ManagedPath)\UnityEngine.dll</HintPath>
       <Private>false</Private>
     </Reference>
-    <!-- 0Harmony 仅编译期引用 (Private=false)，不随 mod 发布。
-         运行时由 CitiesHarmony(创意工坊 2040656402) 统一提供 0Harmony 2.0.4.0，
-         这是 CS1 mod 生态的标准做法，私带 0Harmony 会导致双运行时硬闪退。 -->
     <Reference Include="0Harmony">
       <HintPath>Libs\0Harmony.dll</HintPath>
       <Private>false</Private>
     </Reference>
   </ItemGroup>
 
-  <!-- ===== 源码 ===== -->
+  <!-- ===== Source files ===== -->
   <ItemGroup>
     <Compile Include="Properties\AssemblyInfo.cs" />
     <Compile Include="Source\Mod.cs" />
     <Compile Include="Source\Patches.cs" />
   </ItemGroup>
 
-  <!-- 注意：CSharp.targets 必须放最底部导入 -->
+  <!-- NOTE: CSharp.targets must be imported at the very bottom -->
   <Import Project="$(MSBuildToolsPath)\Microsoft.CSharp.targets" />
 
-  <!-- ===== 编译成功后自动部署到 CS1 的 Mods 目录 ===== -->
+ <!-- ===== Auto-deploy to the CS1 Mods folder after a successful build (Release configuration only;
+         Debug builds stay in bin\Debug and do not overwrite the deployed version) ===== -->
   <Target Name="AfterBuild">
     <MakeDir Directories="$(ModsFolder)" Condition="!Exists('$(ModsFolder)')" />
     <Copy SourceFiles="$(TargetPath)" DestinationFolder="$(ModsFolder)" />
