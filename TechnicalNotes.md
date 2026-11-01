@@ -116,11 +116,64 @@ A Postfix on `GetStopPosition` fires when the player **successfully** places a s
 
 ---
 
-## 5. 工程约束与兼容性 / Engineering constraints & compatibility
+## 5. 修复四：城际列车锚定半径 / Fix 4: Intercity train anchor radius
+
+**目标方法：`TrainAI.StartPathFind`（Transpiler）**
 
 ### 中文
 
-- **逐类打补丁**：不使用 `PatchAll`（单个补丁类失败会中断全部），改为逐类 `CreateClassProcessor(t).Patch()`，单类失败不影响其它修复。
+城际列车（无线路列车）的路径端点由 `TrainAI.StartPathFind` 用 `FindPathPosition` 锚定，硬编码搜索半径 **32 米**（laneType=Vehicle, vehicleType=Train）。对城际列车而言，端点是车站的**连接节点**（`Vehicle.m_targetBuilding` 存的是 NetNode id，由 `PassengerTrainAI.StartPathFind` 解析），而连接节点位置由 `FindStopPosition` 计算，在工坊资产上常常偏离实际站台轨道。32 米内无轨道车道 → 锚定失败 → `PassengerTrainAI.SetTarget` 直接 `Unspawn` 整列车 → 车站永远收不到城际列车。
+
+Transpiler 把该两次锚定查询的 `ldc.r4 32` 改为 `128`（方法内其余浮点常量只有 100/1.2/20000，无歧义）。安全性：`FindPathPosition` 返回**最近**的匹配车道，原本 32 米内就能找到的行为完全不变。
+
+### English
+
+`TrainAI.StartPathFind` anchors the route endpoints of line-less (intercity) trains with a hard-coded **32 m** radius (laneType=Vehicle, vehicleType=Train). For intercity trains the endpoint is the station's **connection node** (`Vehicle.m_targetBuilding` holds a NetNode id, resolved by `PassengerTrainAI.StartPathFind`), whose position comes from `FindStopPosition` and is often offset from the actual platform rail on Workshop assets. No rail lane within 32 m → anchoring fails → `PassengerTrainAI.SetTarget` unspawns the entire train → the station never receives intercity traffic.
+
+The transpiler changes both anchor queries' `ldc.r4 32` to `128` (the only other float constants in the method are 100/1.2/20000, so the pattern is unambiguous). Safety: `FindPathPosition` returns the **closest** matching lane, so behavior is unchanged whenever a lane was already found within 32 m.
+
+---
+
+
+## 6. 修复五：载入时修复套件 / Fix 5: Load-time repair suite
+
+**入口：`LoadRepairs.Run()`，由首个车辆模拟步触发（每载入一次，恰好执行一次）**
+
+### 中文
+
+按 IL 逆向出的城际客流机制：只拥有车站与对外连接之间的有向"Train Line"连接段；市民进出唯一通道是节点的 `NetNode.m_lane` **门户**（`TransportLineAI.UpdateLaneConnection` 在节点 32 米内把节点绑定到最近的有效车道，`PathFind.ProcessItemMain` 借 `m_lane` 让市民在连接段与该车道所在段之间空间跳跃）；等在对外连接节点的市民通过 `HumanAI.GetTransportWaitPosition` 抬升节点 `m_maxWaitTime`，而 `TransportStationAI.ProduceGoods` 要求 `m_maxWaitTime == 255` 才会生成载客的城际列车。
+
+工坊资产在**放置时**若上述任一环节失败，坏状态会**固化进存档**且永不自愈。修复套件在载入时逐项重建，全部调用游戏自身逻辑（无计数器、无强制）：
+
+| 修复 | 针对的固化损坏 | 做法 |
+|---|---|---|
+| 1. 站台轨道标记 | 行人车道缺 `Train` 标记（见修复三） | 补齐 `stopType/vehicleType` |
+| 2. 站台 prefab | `TransportStationAI.m_transportLineInfo == null` → `ProduceGoods`/`CreateOutgoingVehicle` 直接跳过，**整个车站零城际交通** | 赋予原版 "Train Line" NetInfo |
+| 3. 连接节点重建 | `CreateConnectionLines` 只在**放置时**运行，失败后 `m_netNode == 0` 无车 | 反射重调原版 `CreateConnectionLines`（仅对 `m_netNode == 0` 的车站） |
+| 4. PathFailed 清除 | 放置时首次寻路失败后连接段永久带 `PathFailed`，`ProduceGoods` 在出车计时开始前就退出 | 清除车站连接节点所触段的 `PathFailed` |
+| 5. 车道门户修复 | 节点 `m_lane == 0`：市民寻路无法进出孤岛，`m_maxWaitTime` 永远为 0 | 反射重调原版 `UpdateLaneConnection`；若仍失败，用**去掉段标志过滤**的本地重扫（候选段带 End/Bend/Untouchable 等标志会被原版 `FindPathPosition` 静默跳过——工坊长站台几何的常见情况）找到最近行人车道后，仍用原版 `TransportLineAI.AddLaneConnection` 建立门户 |
+
+### English
+
+Per the IL-reverse-engineered intercity passenger flow: a station's connection nodes form a **topological island** owning only the directed "Train Line" connection segments between the station and the outside connection; the citizens' only way in/out is the node's `NetNode.m_lane` **portal** (`TransportLineAI.UpdateLaneConnection` binds the node to the nearest valid lane within 32 m, and `PathFind.ProcessItemMain` hops citizens spatially through it); citizens waiting at the outside node raise `m_maxWaitTime` via `HumanAI.GetTransportWaitPosition`, and `TransportStationAI.ProduceGoods` requires `m_maxWaitTime == 255` before spawning a passenger-carrying intercity train.
+
+If any step failed at **placement time** on a Workshop asset, the broken state is **baked into the save** and never heals. The repair suite rebuilds each item at load time, exclusively through the game's own logic (no counters, no forcing):
+
+| Repair | Baked-in damage addressed | Mechanism |
+|---|---|---|
+| 1. Platform track flags | Pedestrian lanes missing `Train` flags (see Fix 3) | Add `stopType/vehicleType` |
+| 2. Station prefab | `TransportStationAI.m_transportLineInfo == null` → `ProduceGoods`/`CreateOutgoingVehicle` skip the station entirely (**zero intercity traffic**) | Assign the vanilla "Train Line" NetInfo |
+| 3. Connection rebuild | `CreateConnectionLines` runs only at **placement**; on failure `m_netNode == 0` forever | Re-invoke vanilla `CreateConnectionLines` via reflection (only for stations with `m_netNode == 0`) |
+| 4. PathFailed clear | After a failed first pathfind at placement, the connection segment keeps `PathFailed` forever and `ProduceGoods` exits before its spawn timer starts | Clear `PathFailed` on segments touching station connection nodes |
+| 5. Lane portals | Node `m_lane == 0`: citizen pathfinding can never enter/leave the island, so `m_maxWaitTime` stays 0 | Re-run vanilla `UpdateLaneConnection` via reflection; if the portal is still missing, a local re-scan **without the segment-flag filter** (segments carrying End/Bend/Untouchable etc. are silently skipped by vanilla `FindPathPosition` — common on long platform geometry) finds the nearest pedestrian lane and the portal is still built by vanilla `TransportLineAI.AddLaneConnection` |
+
+---
+
+## 7. 工程约束与兼容性 / Engineering constraints & compatibility
+
+### 中文
+
+- **逐类补丁**：不使用 `PatchAll`（单个补丁类失败会中断全部），改为逐类 `CreateClassProcessor(t).Patch()`，单类失败不影响其它修复。
 - **旧 Mono 限制**：CS1 使用 Unity 5.6.7f1 的旧 Mono（约 .NET 3.5 语义）。含 `yield return` / `async` 的方法会被编译器附加 `IteratorStateMachineAttribute` 等新版本特性，导致 `PatchAll`/程序集扫描抛 `TypeLoadException`。因此本 mod 的 transpiler 全部返回显式构建的 `List<CodeInstruction>`，全程序集禁用 `yield` 与 `async`。
 - **栈平衡改写**：所有 IL 分支改写严格保持求值栈平衡（见修复一），避免产生无效 IL 导致原生崩溃。
 - **卸载**：`OnDisabled` 调用 `UnpatchAll` 完整撤销补丁，可随时在内容管理器开关。
@@ -134,7 +187,8 @@ A Postfix on `GetStopPosition` fires when the player **successfully** places a s
 
 ---
 
-## 6. 三个修复的关系 / How the three fixes work together
+
+## 8. 三个修复的关系 / How the three fixes work together
 
 ### 中文
 
