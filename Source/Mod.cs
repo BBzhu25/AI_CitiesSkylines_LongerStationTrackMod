@@ -84,7 +84,7 @@ namespace LongerStationTrackMod
                     catch (System.Exception ex)
                     {
                         fail++;
-                        UnityEngine.Debug.LogError("[LongerStationTrack] Failed to apply patch class " + t.Name + ": " + ex.Message);
+                        UnityEngine.Debug.LogError("[LongerStationTrack] Failed to apply patch class " + t.Name + ": " + ex);
                     }
                 }
                 UnityEngine.Debug.Log("[LongerStationTrack] Patches applied: " + ok + " succeeded, " + fail + " failed");
